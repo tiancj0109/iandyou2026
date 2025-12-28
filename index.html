@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新年快乐</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .login-box {
+            width: 100%;
+            max-width: 420px;
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 40px 30px;
+            box-shadow: 0 6px 30px rgba(0, 0, 0, 0.06);
+        }
+        .title {
+            text-align: center;
+            font-size: 24px;
+            color: #2c3e50;
+            margin-bottom: 35px;
+            font-weight: 700;
+        }
+        #passwordInput {
+            width: 100%;
+            height: 55px;
+            padding: 0 22px;
+            border: 1px solid #e8eef5;
+            border-radius: 12px;
+            font-size: 18px;
+            outline: none;
+            transition: all 0.3s;
+        }
+        #passwordInput:focus {
+            border-color: #3498db;
+            box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
+        }
+        #submitBtn {
+            width: 100%;
+            height: 55px;
+            background: #3498db;
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            margin-top: 25px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        #submitBtn:disabled {
+            background: #bdd7ee;
+            cursor: not-allowed;
+        }
+        .tip {
+            text-align: center;
+            height: 22px;
+            line-height: 22px;
+            margin-top: 20px;
+            font-size: 15px;
+        }
+        #loadingTip { color: #3498db; display: none; }
+        #errorTip { color: #e74c3c; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2 class="title">请输入验证密码</h2>
+        <input type="password" id="passwordInput" placeholder="请输入密码后验证" autocomplete="off">
+        <button id="submitBtn" onclick="verifyPassword()">验证并跳转</button>
+        <div class="tip" id="loadingTip">🔍 验证中，请稍候...</div>
+        <div class="tip" id="errorTip">❌ 密码错误，请重新输入</div>
+    </div>
+    <script>
+        // 密码哈希库（原有不变）
+        const ENCRYPTED_PASSWORDS = [
+            "1a108703ec9e9087446a11e73c1fcddc10b8fcb239d92836b3aa9d3bd31c93a4",
+            "01d70733306deff2d6e80c96b4ff28eef8c0e514d3a07ee516ba063cd50e2a75",
+            "045ab31cd262879dd8ce3a7c7db265debc949b8d42459bd30a6af65722df5227"
+        ];
+        // ✅ 核心隐藏：仅存储URL的BASE64密文 + 你提供的SHA256哈希（无任何明文URL）
+        const TARGET_URL_BASE64 = "aHR0cDovLzM5LjEwNi40LjI1MS9pYW5keW91MjAyNg==";
+        const TARGET_URL_HASH = "9fe3992075e97a7874a105885c669fcfeb0554acc82e7821050f68e2101eb4e5";
+
+        // SHA256加密函数（原有不变）
+        async function sha256Encrypt(rawStr) {
+            const encoder = new TextEncoder();
+            const dataBuffer = encoder.encode(rawStr);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+            return Array.from(new Uint8Array(hashBuffer)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        // ✅ 新增：BASE64解密函数（仅在密码验证通过后执行）
+        function base64Decode(encodedStr) {
+            try {
+                return decodeURIComponent(escape(window.atob(encodedStr)));
+            } catch (err) {
+                throw new Error("地址解析失败");
+            }
+        }
+
+        // 密码验证主函数（逻辑优化，无明文URL）
+        async function verifyPassword() {
+            const pwdInput = document.getElementById('passwordInput');
+            const submitBtn = document.getElementById('submitBtn');
+            const loadingTip = document.getElementById('loadingTip');
+            const errorTip = document.getElementById('errorTip');
+
+            loadingTip.style.display = 'none';
+            errorTip.style.display = 'none';
+
+            const inputPwd = pwdInput.value.trim();
+            if (!inputPwd) {
+                alert('⚠️ 请输入验证密码！');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            loadingTip.style.display = 'block';
+
+            try {
+                // 1. 验证密码哈希
+                const encryptedInput = await sha256Encrypt(inputPwd);
+                const isPasswordValid = ENCRYPTED_PASSWORDS.includes(encryptedInput);
+                
+                if (isPasswordValid) {
+                    // 2. 密码验证通过 → 解密URL密文 + 二次哈希校验（双重安全）
+                    const realTargetUrl = base64Decode(TARGET_URL_BASE64);
+                    const decodedUrlHash = await sha256Encrypt(realTargetUrl);
+                    
+                    // 3. 校验解密后的URL哈希，防止密文被篡改
+                    if (decodedUrlHash === TARGET_URL_HASH) {
+                        window.location.href = realTargetUrl; // 最终跳转
+                    } else {
+                        alert('⚠️ 目标地址已被篡改，跳转失败！');
+                    }
+                } else {
+                    loadingTip.style.display = 'none';
+                    errorTip.style.display = 'block';
+                }
+            } catch (err) {
+                alert('⚠️ 系统验证异常，请重试！');
+                console.error(err);
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        // 回车提交（原有不变）
+        document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') verifyPassword();
+        });
+    </script>
+</body>
+</html>
